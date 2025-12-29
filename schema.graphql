@@ -1,0 +1,166 @@
+"""
+A hex color code string, such as #FF5733. 
+"""
+scalar ColorCode
+
+scalar DateTime
+
+"""
+Determines the urgency of a task.
+"""
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+"""
+The specific columns available on the board.
+"""
+enum Column {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+interface Node {
+  id: ID!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type User implements Node {
+  id: ID!
+  username: String!
+  avatarColor: ColorCode
+}
+
+"""
+Represents a polymorphic event in the history of a Task.
+"""
+interface Activity {
+  id: ID!
+  timestamp: DateTime!
+  actor: User!
+}
+
+type CommentActivity implements Activity {
+  id: ID!
+  timestamp: DateTime!
+  actor: User!
+  text: String!
+}
+
+type StatusChangeActivity implements Activity {
+  id: ID!
+  timestamp: DateTime!
+  actor: User!
+  oldStatus: Column!
+  newStatus: Column!
+}
+
+type Task implements Node {
+  id: ID!
+  title: String!
+  priority: Priority!
+
+  """
+  The current column enum.
+  """
+  status: Column!
+
+  """
+  Calculated on-the-fly (days since creation).
+  """
+  daysOpen: Int!
+
+  """
+  **Authorization:** Visible only to team members.
+  """
+  description: String
+
+  """
+  **Performance:** Uses DataLoader.
+  """
+  assignee: User
+
+  activities: [Activity!]!
+}
+
+# --- Relay Connections ---
+
+type TaskConnection {
+  edges: [TaskEdge]
+  pageInfo: PageInfo!
+}
+
+type TaskEdge {
+  cursor: String!
+  node: Task!
+}
+
+# --- Mutation Error Handling ---
+
+"""
+Common interface for errors.
+Note: This interface cannot be in the Union, but the Types implementing it can be.
+"""
+interface BaseError {
+  message: String!
+}
+
+type TaskNotFoundError implements BaseError {
+  message: String!
+  suggestedAction: String
+}
+
+type InvalidColumnError implements BaseError {
+  message: String!
+  """
+  Returns the valid enums the client could use.
+  """
+  availableColumns: [Column!]!
+}
+
+type MoveTaskSuccess {
+  task: Task!
+  movedToColumn: Column!
+  previousColumn: Column!
+}
+
+"""
+The Result Union.
+Contains only Object Types (MoveTaskSuccess, TaskNotFoundError, etc.), no Interfaces.
+"""
+union MoveTaskResult = MoveTaskSuccess | TaskNotFoundError | InvalidColumnError
+
+# --- Root Types ---
+
+type Query {
+  node(id: ID!): Node
+
+  tasks(
+    first: Int,
+    after: String,
+    priority: Priority,
+    column: Column,
+    assigneeId: ID
+  ): TaskConnection
+}
+
+type Mutation {
+  moveTask(taskId: ID!, newColumn: Column!, newIndex: Int!): MoveTaskResult
+
+  createTask(title: String!, priority: Priority = LOW): Task
+}
+
+type Subscription {
+  taskMoved: Task
+}
